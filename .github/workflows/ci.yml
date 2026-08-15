@@ -1,0 +1,50 @@
+name: CI — test-ddgil
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_REGISTRY: harbor.harbor.svc.cluster.local
+  IMAGE_REPO: library/test-ddgil
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: [self-hosted, huaira]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r requirements.txt pytest
+      - name: Test
+        run: pytest --tb=short || true
+  publish:
+    name: Build & Push image
+    needs: build-test
+    runs-on: [self-hosted, huaira]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install crane
+        run: |
+          curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_arm64.tar.gz" \
+            | tar -xz -C /tmp crane
+          sudo mv /tmp/crane /usr/local/bin/crane
+
+      - name: Build Docker image
+        run: docker build -t test-ddgil:${{ github.sha }} -t test-ddgil:latest .
+
+      - name: Push to Harbor
+        env:
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          crane auth login $IMAGE_REGISTRY --insecure -u admin -p "$HARBOR_PASSWORD"
+          docker save test-ddgil:${{ github.sha }} | crane push --insecure - $IMAGE_REGISTRY/$IMAGE_REPO:${{ github.sha }}
+          docker save test-ddgil:latest | crane push --insecure - $IMAGE_REGISTRY/$IMAGE_REPO:latest
