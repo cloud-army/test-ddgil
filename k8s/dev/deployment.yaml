@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-ddgil
+  namespace: test-ddgil-dev
+  labels:
+    app: test-ddgil
+    env: dev
+    managed-by: huaira
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-ddgil
+  template:
+    metadata:
+      labels:
+        app: test-ddgil
+        env: dev
+    spec:
+      containers:
+      - name: app
+        image: harbor.harbor.svc.cluster.local/library/test-ddgil:latest
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-ddgil
+  namespace: test-ddgil-dev
+spec:
+  selector:
+    app: test-ddgil
+  ports:
+  - port: 80
+    targetPort: 8080
