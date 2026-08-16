@@ -1,0 +1,5 @@
+test-ddgil
+*.test
+.env
+.env.*
+vendor/

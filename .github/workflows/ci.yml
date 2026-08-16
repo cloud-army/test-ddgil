@@ -1,50 +1,65 @@
-name: CI — test-ddgil
+name: CI/CD — Build & Deploy
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+    paths-ignore:
+      - 'k8s/**'
+  workflow_dispatch:
 
 env:
-  IMAGE_REGISTRY: harbor.harbor.svc.cluster.local
-  IMAGE_REPO: library/test-ddgil
+  REGISTRY: ghcr.io
+  IMAGE_NAME: cloud-army/test-ddgil
 
 jobs:
-  build-test:
-    name: Build & Test
-    runs-on: [self-hosted, huaira]
-    steps:
-      - uses: actions/checkout@v4
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
-      - name: Install deps
-        run: pip install -r requirements.txt pytest
-      - name: Test
-        run: pytest --tb=short || true
-  publish:
-    name: Build & Push image
-    needs: build-test
-    runs-on: [self-hosted, huaira]
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
+          go-version: '1.23'
+          cache: true
 
-      - name: Install crane
+      - name: Build
+        run: go build ./...
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update k8s manifests
         run: |
-          curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_arm64.tar.gz" \
-            | tar -xz -C /tmp crane
-          sudo mv /tmp/crane /usr/local/bin/crane
-
-      - name: Build Docker image
-        run: docker build -t test-ddgil:${{ github.sha }} -t test-ddgil:latest .
-
-      - name: Push to Harbor
-        env:
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-        run: |
-          crane auth login $IMAGE_REGISTRY --insecure -u admin -p "$HARBOR_PASSWORD"
-          docker save test-ddgil:${{ github.sha }} | crane push --insecure - $IMAGE_REGISTRY/$IMAGE_REPO:${{ github.sha }}
-          docker save test-ddgil:latest | crane push --insecure - $IMAGE_REGISTRY/$IMAGE_REPO:latest
+          SHORT_SHA="${GITHUB_SHA::8}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}"
+          sed -i "s|image: .*test-ddgil.*|image: ${IMAGE}|" k8s/dev/deployment.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/
+          git diff --staged --quiet || git commit -m "ci: update image to sha-${SHORT_SHA} [skip ci]"
+          git push

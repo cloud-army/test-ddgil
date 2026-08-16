@@ -1,7 +1,13 @@
-FROM python:3.12-slim
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY src/ ./src/
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o test-ddgil .
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates
+WORKDIR /app
+COPY --from=builder /app/test-ddgil .
 EXPOSE 8080
-CMD ["gunicorn", "src.main:app", "--bind", "0.0.0.0:8080", "--workers", "2"]
+CMD ["./test-ddgil"]
