@@ -28,7 +28,7 @@ spec:
       - name: ghcr-secret
       containers:
       - name: app
-        image: ghcr.io/cloud-army/test-ddgil:sha-9ec285a5
+        image: ghcr.io/cloud-army/test-ddgil:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
