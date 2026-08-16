@@ -7,6 +7,7 @@ metadata:
     app: test-ddgil
     env: dev
     managed-by: huaira
+    team: cloud-army
 spec:
   replicas: 1
   selector:
@@ -17,34 +18,57 @@ spec:
       labels:
         app: test-ddgil
         env: dev
+        team: cloud-army
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: app
         image: harbor.harbor.svc.cluster.local/library/test-ddgil:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_NAME
+          value: test-ddgil
+        - name: ENV
+          value: dev
         livenessProbe:
           httpGet:
             path: /health
             port: 8080
           initialDelaySeconds: 15
           periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           requests:
             cpu: 100m
-            memory: 128Mi
+            memory: 64Mi
           limits:
             cpu: 500m
-            memory: 512Mi
+            memory: 256Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: test-ddgil
   namespace: test-ddgil-dev
+  labels:
+    app: test-ddgil
+    team: cloud-army
 spec:
   selector:
     app: test-ddgil
   ports:
-  - port: 80
+  - name: http
+    port: 80
     targetPort: 8080
